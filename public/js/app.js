@@ -268,6 +268,9 @@ function quitAssessment() {
 }
 
 function skipSave() {
+    if (!assessmentId) {
+        assessmentId = 'asm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
     saveResult({ name: '', department: '', position: '' });
 }
 
@@ -281,20 +284,41 @@ document.getElementById('saveInfoForm').addEventListener('submit', e => {
 });
 
 async function saveResult(info) {
-    const results = calculateResults();
-    const overall = results.overall;
+    console.log('Saving result...', {assessmentId, currentUser: currentUser?.uid});
     
-    await db.collection('assessments').doc(assessmentId).set({
-        userId: currentUser.uid,
-        userEmail: currentUser.email,
-        ...info,
-        answers: currentAnswers,
-        results: results.dims,
-        overallScore: overall,
-        createdAt: new Date()
-    });
+    if (!currentUser) {
+        alert('请先登录');
+        showAuth();
+        return;
+    }
     
-    showResult(results.dims, overall);
+    if (!assessmentId) {
+        assessmentId = 'asm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        console.log('Generated new assessmentId:', assessmentId);
+    }
+    
+    try {
+        const results = calculateResults();
+        const overall = results.overall;
+        
+        console.log('Saving to Firestore...', {assessmentId, dims: results.dims.length});
+        
+        await db.collection('assessments').doc(assessmentId).set({
+            userId: currentUser.uid,
+            userEmail: currentUser.email,
+            ...info,
+            answers: currentAnswers,
+            results: results.dims,
+            overallScore: overall,
+            createdAt: new Date()
+        });
+        
+        console.log('Save successful!');
+        showResult(results.dims, overall);
+    } catch (error) {
+        console.error('Save error:', error);
+        alert('保存失败: ' + error.message);
+    }
 }
 
 function calculateResults() {
