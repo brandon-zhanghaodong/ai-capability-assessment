@@ -10,7 +10,12 @@ const firebaseConfig = {
 
 // Initialize Firebase
 if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
+    try {
+        firebase.initializeApp(firebaseConfig);
+        console.log('Firebase initialized successfully');
+    } catch (e) {
+        console.error('Firebase init error:', e);
+    }
 }
 const db = firebase.firestore();
 const auth = firebase.auth();
@@ -81,6 +86,7 @@ const SUGGESTIONS = {
 
 // Auth State
 auth.onAuthStateChanged(user => {
+    console.log('Auth state changed:', user ? 'logged in' : 'logged out');
     currentUser = user;
     document.getElementById('loading').classList.add('hidden');
     if (user) {
@@ -89,6 +95,8 @@ auth.onAuthStateChanged(user => {
     } else {
         showAuth();
     }
+}, error => {
+    console.error('Auth error:', error);
 });
 
 // Show Views
@@ -138,11 +146,14 @@ function hideAll() {
 let isLogin = true;
 document.getElementById('authSwitchBtn').addEventListener('click', e => {
     e.preventDefault();
+    e.stopPropagation();
+    console.log('Switch clicked, was isLogin:', isLogin);
     isLogin = !isLogin;
     document.getElementById('authTitle').textContent = isLogin ? '用户登录' : '创建账号';
     document.getElementById('authSwitchBtn').textContent = isLogin ? '立即注册' : '立即登录';
     document.getElementById('authSwitchText').textContent = isLogin ? '还没有账号？' : '已有账号？';
     document.getElementById('authCompanyGroup').classList.toggle('hidden', isLogin);
+    console.log('Switch done, now isLogin:', isLogin);
 });
 
 document.getElementById('authForm').addEventListener('submit', async e => {
@@ -152,18 +163,26 @@ document.getElementById('authForm').addEventListener('submit', async e => {
     const company = document.getElementById('authCompany').value;
     const errorEl = document.getElementById('authError');
     
+    console.log('Form submitted, isLogin:', isLogin, 'email:', email);
+    errorEl.classList.add('hidden');
+    
     try {
         if (isLogin) {
+            console.log('Attempting login...');
             await auth.signInWithEmailAndPassword(email, password);
+            console.log('Login successful');
         } else {
+            console.log('Attempting registration...');
             const cred = await auth.createUserWithEmailAndPassword(email, password);
+            console.log('Registration successful, uid:', cred.user.uid);
             if (company) {
                 await db.collection('users').doc(cred.user.uid).set({ company, email, createdAt: new Date() });
             }
         }
         showHome();
     } catch (err) {
-        errorEl.textContent = err.message;
+        console.error('Auth error:', err.code, err.message);
+        errorEl.textContent = err.code + ': ' + err.message;
         errorEl.classList.remove('hidden');
     }
 });
