@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>控制台 - AI组织转型人才能力测评</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold text-gray-800">AI组织转型人才能力测评</h1>
+                <p class="text-sm text-gray-500">{{ username }} {% if company %}· {{ company }}{% endif %}</p>
+            </div>
+            <div class="flex items-center space-x-4">
+                <a href="/assessment" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    新建测评
+                </a>
+                <a href="/logout" class="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
+                    退出
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        <!-- Quick Start -->
+        <div class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-8 mb-8 text-white">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-2xl font-bold mb-2">欢迎回来，{{ username }}！</h2>
+                    <p class="text-blue-100">基于「AI组织转型实战框架」的能力评估工具</p>
+                </div>
+                <a href="/assessment" class="px-8 py-3 bg-white text-blue-600 rounded-xl font-bold hover:bg-blue-50 transition-colors">
+                    开始新的测评 →
+                </a>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-xl shadow p-6">
+                <div class="text-3xl font-bold text-blue-600">{{ history|length }}</div>
+                <div class="text-gray-600 text-sm">已完成测评次数</div>
+            </div>
+            <div class="bg-white rounded-xl shadow p-6">
+                <div class="text-3xl font-bold text-green-600">
+                    {% if history %}
+                        {% set avg = namespace(value=0) %}
+                        {% for h in history %}
+                            {% set avg.value = avg.value + h.score %}
+                        {% endfor %}
+                        {{ '%.1f'.format(avg.value / history|length) }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </div>
+                <div class="text-gray-600 text-sm">平均得分</div>
+            </div>
+            <div class="bg-white rounded-xl shadow p-6">
+                <div class="text-3xl font-bold text-orange-600">
+                    {% if history %}
+                        {% set max = namespace(value=0) %}
+                        {% for h in history %}
+                            {% if h.score > max.value %}
+                                {% set max.value = h.score %}
+                            {% endif %}
+                        {% endfor %}
+                        {{ '%.1f'.format(max.value) }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </div>
+                <div class="text-gray-600 text-sm">最高得分</div>
+            </div>
+        </div>
+
+        <!-- History -->
+        <div class="bg-white rounded-2xl shadow">
+            <div class="p-6 border-b border-gray-100">
+                <h2 class="text-xl font-bold text-gray-800">测评历史记录</h2>
+            </div>
+            <div class="p-6">
+                {% if history %}
+                <div class="space-y-4">
+                    {% for h in history %}
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                        <div class="flex-1">
+                            <div class="flex items-center">
+                                <span class="font-medium text-gray-800">{{ h.name }}</span>
+                                {% if h.department %}
+                                <span class="mx-2 text-gray-400">|</span>
+                                <span class="text-gray-600 text-sm">{{ h.department }}</span>
+                                {% endif %}
+                                {% if h.position %}
+                                <span class="mx-2 text-gray-400">|</span>
+                                <span class="text-gray-600 text-sm">{{ h.position }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="text-sm text-gray-500 mt-1">{{ h.date }}</div>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <div class="text-right">
+                                <div class="text-2xl font-bold {% if h.score >= 4 %}text-green-600{% elif h.score >= 3 %}text-blue-600{% else %}text-orange-600{% endif %}">
+                                    {{ '%.1f'.format(h.score) }}
+                                </div>
+                                <div class="text-xs text-gray-500">/ 5.0</div>
+                            </div>
+                            <div class="flex space-x-2">
+                                <a href="/result/{{ h.id }}" class="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm hover:bg-blue-200 transition-colors">
+                                    查看
+                                </a>
+                                <a href="/report/{{ h.id }}" class="px-4 py-2 bg-green-100 text-green-700 rounded-lg text-sm hover:bg-green-200 transition-colors">
+                                    PDF报告
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-12">
+                    <div class="text-6xl mb-4">📊</div>
+                    <h3 class="text-lg font-medium text-gray-800 mb-2">还没有测评记录</h3>
+                    <p class="text-gray-500 mb-6">开始你的第一次AI能力评估吧</p>
+                    <a href="/assessment" class="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        开始测评
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center text-gray-400 text-sm py-8">
+        <p>基于「AI组织转型实战框架」开发 | 小龙虾公司出品</p>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,588 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+AI组织转型人才能力在线测评系统 - 商业版 v3.0
+支持用户管理、企业团队、团队汇总分析、PDF报告
+"""
+
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file, make_response
+import sqlite3
+import hashlib
+import os
+import uuid
+from datetime import datetime
+from io import BytesIO
+
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'ai-capability-v3-' + str(uuid.uuid4()))
+
+DATABASE = '/tmp/ai_assessment_v3.db'
+
+def init_db():
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            company TEXT,
+            is_admin INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS assessments (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            name TEXT,
+            department TEXT,
+            position TEXT,
+            answers TEXT,
+            results TEXT,
+            overall_score REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def hash_password(pwd):
+    return hashlib.sha256(pwd.encode()).hexdigest()
+
+def verify_password(pwd, hashed):
+    return hash_password(pwd) == hashed
+
+def get_db_conn():
+    return sqlite3.connect(DATABASE)
+
+# ============ 数据 ============
+CAPABILITY_DIMENSIONS = {
+    'STR': {'name': '战略与价值流重构', 'weight': 0.20, 'color': '#4472C4'},
+    'ORG': {'name': '组织架构与人才', 'weight': 0.25, 'color': '#70AD47'},
+    'DAT': {'name': '数据底座与治理', 'weight': 0.20, 'color': '#FFC000'},
+    'TEC': {'name': '技术基础设施', 'weight': 0.15, 'color': '#ED7D31'},
+    'CUL': {'name': '文化与变革管理', 'weight': 0.20, 'color': '#9E480E'},
+}
+
+QUESTIONS = [
+    {'id': 1, 'code': 'STR-01', 'dimension': 'STR', 'question': '我能够制定所在部门的AI应用短期和长期规划'},
+    {'id': 2, 'code': 'STR-02', 'dimension': 'STR', 'question': '我能识别出哪些业务场景最适合引入AI技术'},
+    {'id': 3, 'code': 'STR-03', 'dimension': 'STR', 'question': '我能够测算AI项目的投入产出比和投资回报周期'},
+    {'id': 4, 'code': 'STR-04', 'dimension': 'STR', 'question': '我能将AI目标与组织战略OKR有效结合'},
+    {'id': 5, 'code': 'STR-05', 'dimension': 'STR', 'question': '我在推动AI应用时常遇到组织变革阻力'},
+    {'id': 6, 'code': 'ORG-01', 'dimension': 'ORG', 'question': '我能够设计人机协作的工作流程和岗位职责'},
+    {'id': 7, 'code': 'ORG-02', 'dimension': 'ORG', 'question': '我能够识别和评估AI关键岗位人才'},
+    {'id': 8, 'code': 'ORG-03', 'dimension': 'ORG', 'question': '我了解AI卓越中心(COE)的定位和运作模式'},
+    {'id': 9, 'code': 'ORG-04', 'dimension': 'ORG', 'question': '我能有效管理包含AI角色的跨职能项目团队'},
+    {'id': 10, 'code': 'ORG-05', 'dimension': 'ORG', 'question': '我能制定岗位转型计划帮助员工适应AI时代'},
+    {'id': 11, 'code': 'ORG-06', 'dimension': 'ORG', 'question': '我能够编写高质量的Prompt来获取理想AI输出'},
+    {'id': 12, 'code': 'ORG-07', 'dimension': 'ORG', 'question': '我每周使用AI工具提升工作效率的时间超过5小时'},
+    {'id': 13, 'code': 'DAT-01', 'dimension': 'DAT', 'question': '我清楚了解企业有哪些可用的数据资产'},
+    {'id': 14, 'code': 'DAT-02', 'dimension': 'DAT', 'question': '我能够识别和解决数据质量问题'},
+    {'id': 15, 'code': 'DAT-03', 'dimension': 'DAT', 'question': '我了解RAG/知识库的技术原理和应用价值'},
+    {'id': 16, 'code': 'DAT-04', 'dimension': 'DAT', 'question': '我在工作中严格遵守数据安全和合规要求'},
+    {'id': 17, 'code': 'DAT-05', 'dimension': 'DAT', 'question': '我能够使用数据分析工具发现业务洞察'},
+    {'id': 18, 'code': 'DAT-06', 'dimension': 'DAT', 'question': '我能处理文档、图片、音视频等非结构化数据'},
+    {'id': 19, 'code': 'TEC-01', 'dimension': 'TEC', 'question': '我了解企业级AI技术平台的核心组成'},
+    {'id': 20, 'code': 'TEC-02', 'dimension': 'TEC', 'question': '我能够根据业务场景选择合适的AI模型'},
+    {'id': 21, 'code': 'TEC-03', 'dimension': 'TEC', 'question': '我了解模型部署、监控和持续迭代的流程'},
+    {'id': 22, 'code': 'TEC-04', 'dimension': 'TEC', 'question': '我能够将AI能力集成到现有业务系统中'},
+    {'id': 23, 'code': 'TEC-05', 'dimension': 'TEC', 'question': '我能够使用低代码平台搭建简单AI应用'},
+    {'id': 24, 'code': 'CUL-01', 'dimension': 'CUL', 'question': '我能够向非技术背景的人解释AI的价值和应用'},
+    {'id': 25, 'code': 'CUL-02', 'dimension': 'CUL', 'question': '我能够识别员工对AI的焦虑并给予正向引导'},
+    {'id': 26, 'code': 'CUL-03', 'dimension': 'CUL', 'question': '我设计过将AI成果纳入绩效考核的激励机制'},
+    {'id': 27, 'code': 'CUL-04', 'dimension': 'CUL', 'question': '我能够设计和交付AI工具使用的培训课程'},
+    {'id': 28, 'code': 'CUL-05', 'dimension': 'CUL', 'question': '我了解AI伦理、版权、隐私保护的红线和边界'},
+    {'id': 29, 'code': 'CUL-06', 'dimension': 'CUL', 'question': '我建立了个人/团队的持续学习和知识分享机制'},
+]
+
+CAPABILITY_LEVELS = {
+    1: {'name': '初步了解'},
+    2: {'name': '基础应用'},
+    3: {'name': '熟练应用'},
+    4: {'name': '优化创新'},
+    5: {'name': '专家引领'},
+}
+
+DEVELOPMENT_SUGGESTIONS = {
+    'STR': '建议参加AI战略规划工作坊，学习行业最佳实践，尝试主导一个小场景的AI落地项目',
+    'ORG': '建议深入学习人机协作设计方法，参与跨部门AI项目，推动建立内部AI卓越中心',
+    'DAT': '建议系统学习数据治理知识，参与企业数据资产盘点，搭建部门级知识库',
+    'TEC': '建议了解主流AI模型特点，学习LLMOps基础，参与AI平台规划讨论',
+    'CUL': '建议学习变革管理方法，设计团队AI激励机制，成为组织内的AI布道师',
+}
+
+# ============ 页面路由 ============
+
+@app.route('/')
+def index():
+    if session.get('user_id'):
+        return redirect(url_for('dashboard'))
+    return render_template('index.html', dimensions=CAPABILITY_DIMENSIONS)
+
+@app.route('/login')
+def login_page():
+    if session.get('user_id'):
+        return redirect(url_for('dashboard'))
+    return render_template('login.html')
+
+@app.route('/register')
+def register_page():
+    if session.get('user_id'):
+        return redirect(url_for('dashboard'))
+    return render_template('register.html')
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    company = data.get('company', '').strip()
+    
+    if not username or not password:
+        return jsonify({'status': 'error', 'message': '用户名和密码不能为空'})
+    if len(password) < 6:
+        return jsonify({'status': 'error', 'message': '密码至少6位'})
+    
+    user_id = str(uuid.uuid4())[:8]
+    try:
+        conn = get_db_conn()
+        c = conn.cursor()
+        c.execute('INSERT INTO users (id, username, password, company) VALUES (?, ?, ?, ?)',
+                 (user_id, username, hash_password(password), company))
+        conn.commit()
+        conn.close()
+        
+        session['user_id'] = user_id
+        session['username'] = username
+        session['company'] = company
+        session['is_admin'] = 0
+        
+        return jsonify({'status': 'success', 'redirect': '/dashboard'})
+    except sqlite3.IntegrityError:
+        return jsonify({'status': 'error', 'message': '用户名已存在'})
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    c.execute('SELECT id, username, password, company, is_admin FROM users WHERE username = ?', (username,))
+    user = c.fetchone()
+    conn.close()
+    
+    if user and verify_password(password, user[2]):
+        session['user_id'] = user[0]
+        session['username'] = user[1]
+        session['company'] = user[3]
+        session['is_admin'] = user[4]
+        return jsonify({'status': 'success', 'redirect': '/dashboard'})
+    
+    return jsonify({'status': 'error', 'message': '用户名或密码错误'})
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
+
+@app.route('/dashboard')
+def dashboard():
+    if not session.get('user_id'):
+        return redirect(url_for('login_page'))
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    c.execute('''SELECT id, name, department, position, overall_score, created_at 
+                 FROM assessments WHERE user_id = ? ORDER BY created_at DESC''', 
+              (session['user_id'],))
+    history = c.fetchall()
+    conn.close()
+    
+    history_list = [{
+        'id': h[0], 'name': h[1] or '匿名', 'department': h[2] or '',
+        'position': h[3] or '', 'score': h[4] or 0, 'date': h[5][:10] if h[5] else ''
+    } for h in history]
+    
+    return render_template('dashboard.html', 
+                         username=session.get('username', ''),
+                         company=session.get('company', ''),
+                         history=history_list,
+                         is_admin=session.get('is_admin', 0))
+
+@app.route('/team')
+def team_analytics():
+    """团队汇总分析"""
+    if not session.get('user_id'):
+        return redirect(url_for('login_page'))
+    
+    company = session.get('company', '')
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    
+    # 获取公司所有测评
+    if company:
+        c.execute('''
+            SELECT a.id, a.name, a.department, a.position, a.overall_score, a.created_at,
+                   u.username
+            FROM assessments a
+            JOIN users u ON a.user_id = u.id
+            WHERE u.company = ?
+            ORDER BY a.created_at DESC
+        ''', (company,))
+    else:
+        c.execute('''
+            SELECT a.id, a.name, a.department, a.position, a.overall_score, a.created_at,
+                   u.username
+            FROM assessments a
+            JOIN users u ON a.user_id = u.id
+            ORDER BY a.created_at DESC
+        ''')
+    
+    all_assessments = c.fetchall()
+    conn.close()
+    
+    # 按部门汇总
+    dept_stats = {}
+    for a in all_assessments:
+        dept = a[2] or '未填写部门'
+        if dept not in dept_stats:
+            dept_stats[dept] = {'count': 0, 'total_score': 0, 'scores': []}
+        dept_stats[dept]['count'] += 1
+        dept_stats[dept]['total_score'] += (a[4] or 0)
+        dept_stats[dept]['scores'].append(a[4] or 0)
+    
+    dept_list = []
+    for dept, stats in dept_stats.items():
+        avg = stats['total_score'] / stats['count'] if stats['count'] > 0 else 0
+        dept_list.append({
+            'name': dept,
+            'count': stats['count'],
+            'avg_score': round(avg, 1),
+            'max_score': max(stats['scores']) if stats['scores'] else 0,
+            'min_score': min(stats['scores']) if stats['scores'] else 0
+        })
+    
+    # 整体统计
+    total_count = len(all_assessments)
+    total_avg = sum(a[4] or 0 for a in all_assessments) / total_count if total_count > 0 else 0
+    total_max = max([a[4] or 0 for a in all_assessments]) if all_assessments else 0
+    total_min = min([a[4] or 0 for a in all_assessments]) if all_assessments else 0
+    
+    # 能力等级分布
+    level_dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    for a in all_assessments:
+        score = a[4] or 0
+        if score >= 4.5: level = 5
+        elif score >= 3.5: level = 4
+        elif score >= 2.5: level = 3
+        elif score >= 1.5: level = 2
+        else: level = 1
+        level_dist[level] += 1
+    
+    # 各维度平均得分（需要重新计算）
+    import ast
+    dim_totals = {k: {'sum': 0, 'count': 0} for k in CAPABILITY_DIMENSIONS.keys()}
+    
+    for a in all_assessments:
+        if a[6]:  # results field
+            try:
+                results = ast.literal_eval(a[6])
+                for r in results:
+                    code = r.get('code')
+                    if code in dim_totals:
+                        dim_totals[code]['sum'] += r.get('rate', 0) * 100
+                        dim_totals[code]['count'] += 1
+            except:
+                pass
+    
+    dim_avg = []
+    for code, info in CAPABILITY_DIMENSIONS.items():
+        if dim_totals[code]['count'] > 0:
+            avg_val = dim_totals[code]['sum'] / dim_totals[code]['count']
+        else:
+            avg_val = 0
+        dim_avg.append({
+            'code': code,
+            'name': info['name'],
+            'color': info['color'],
+            'avg': round(avg_val, 1)
+        })
+    
+    # 人才列表
+    talent_list = [{
+        'name': a[1] or '匿名',
+        'department': a[2] or '',
+        'position': a[3] or '',
+        'score': round(a[4], 1) if a[4] else 0,
+        'date': a[5][:10] if a[5] else ''
+    } for a in all_assessments[:20]]  # 最近20条
+    
+    return render_template('team.html',
+                         company=company,
+                         total_count=total_count,
+                         total_avg=round(total_avg, 1),
+                         total_max=round(total_max, 1),
+                         total_min=round(total_min, 1),
+                         dept_list=dept_list,
+                         level_dist=level_dist,
+                         dim_avg=dim_avg,
+                         talent_list=talent_list)
+
+@app.route('/assessment')
+def assessment():
+    if not session.get('user_id'):
+        return redirect(url_for('login_page'))
+    
+    session['answers'] = {}
+    session['current'] = 1
+    session.modified = True
+    
+    return render_template('assessment.html',
+                         question=QUESTIONS[0],
+                         q_num=1,
+                         total=len(QUESTIONS),
+                         prev_answer=None)
+
+@app.route('/assessment/q/<int:q_num>')
+def assessment_question(q_num):
+    if not session.get('user_id'):
+        return redirect(url_for('login_page'))
+    
+    if q_num < 1:
+        q_num = 1
+    if q_num > len(QUESTIONS):
+        return redirect(url_for('save_info'))
+    
+    session['current'] = q_num
+    session.modified = True
+    
+    prev_answer = session.get('answers', {}).get(q_num)
+    
+    return render_template('assessment.html',
+                         question=QUESTIONS[q_num-1],
+                         q_num=q_num,
+                         total=len(QUESTIONS),
+                         prev_answer=prev_answer)
+
+@app.route('/api/save_answer', methods=['POST'])
+def save_answer():
+    if not session.get('user_id'):
+        return jsonify({'status': 'error', 'message': '请先登录'})
+    
+    data = request.json
+    q_id = data.get('question_id')
+    score = data.get('score')
+    
+    if 'answers' not in session:
+        session['answers'] = {}
+    
+    session['answers'][q_id] = score
+    session.modified = True
+    
+    next_q = q_id + 1
+    if next_q > len(QUESTIONS):
+        return jsonify({'status': 'complete', 'redirect': '/save_info'})
+    
+    return jsonify({'status': 'success', 'next': next_q})
+
+@app.route('/save_info', methods=['GET', 'POST'])
+def save_info():
+    if not session.get('user_id'):
+        return redirect(url_for('login_page'))
+    
+    if request.method == 'POST':
+        name = request.form.get('name', '')
+        department = request.form.get('department', '')
+        position = request.form.get('position', '')
+        
+        answers = session.get('answers', {})
+        
+        # 计算结果
+        dimension_scores = {}
+        dimension_counts = {}
+        for q in QUESTIONS:
+            q_id = q['id']
+            dim = q['dimension']
+            if q_id in answers:
+                if dim not in dimension_scores:
+                    dimension_scores[dim] = 0
+                    dimension_counts[dim] = 0
+                dimension_scores[dim] += answers[q_id]
+                dimension_counts[dim] += 1
+        
+        results = []
+        for dim_code, dim_info in CAPABILITY_DIMENSIONS.items():
+            if dim_code in dimension_scores:
+                max_score = dimension_counts[dim_code] * 5
+                actual_score = dimension_scores[dim_code]
+                score_rate = actual_score / max_score if max_score > 0 else 0
+                avg_score = actual_score / dimension_counts[dim_code] if dimension_counts[dim_code] > 0 else 0
+                
+                if score_rate < 0.3: level = 1
+                elif score_rate < 0.5: level = 2
+                elif score_rate < 0.7: level = 3
+                elif score_rate < 0.85: level = 4
+                else: level = 5
+                
+                results.append({
+                    'code': dim_code, 'name': dim_info['name'], 'color': dim_info['color'],
+                    'weight': dim_info['weight'], 'rate': score_rate, 'avg_score': avg_score,
+                    'level': level, 'level_name': CAPABILITY_LEVELS[level]['name'],
+                    'suggestion': DEVELOPMENT_SUGGESTIONS[dim_code],
+                })
+        
+        total_weighted = sum(r['rate'] * r['weight'] for r in results)
+        overall_score = total_weighted * 5
+        
+        if overall_score >= 4.5: overall_comment = '你是AI组织转型的专家级人才！'
+        elif overall_score >= 3.5: overall_comment = '你具备较强的AI组织转型能力，是组织中的AI先行者'
+        elif overall_score >= 2.5: overall_comment = '你处于AI能力的中等水平，有较大提升空间'
+        else: overall_comment = '你的AI能力还需要大量学习和实践，但这是成长的起点'
+        
+        radar_data = [{'dimension': r['name'], 'value': r['rate'] * 100, 'color': r['color']} for r in results]
+        sorted_results = sorted(results, key=lambda x: x['rate'])
+        weakest = sorted_results[:2]
+        strongest = sorted_results[-2:][::-1]
+        
+        # 保存
+        assessment_id = str(uuid.uuid4())[:8]
+        conn = get_db_conn()
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO assessments (id, user_id, name, department, position, answers, results, overall_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (assessment_id, session['user_id'], name, department, position,
+              str(answers), str(results), overall_score))
+        conn.commit()
+        conn.close()
+        
+        session['last_assessment_id'] = assessment_id
+        
+        return redirect(url_for('view_result', assessment_id=assessment_id))
+    
+    return render_template('save_info.html')
+
+@app.route('/result/<assessment_id>')
+def view_result(assessment_id):
+    if not session.get('user_id'):
+        return redirect(url_for('login_page'))
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    c.execute('SELECT * FROM assessments WHERE id = ? AND user_id = ?', 
+              (assessment_id, session['user_id']))
+    row = c.fetchone()
+    conn.close()
+    
+    if not row:
+        return redirect(url_for('dashboard'))
+    
+    import ast
+    results_data = ast.literal_eval(row[6]) if row[6] else []
+    overall_score = row[7]
+    
+    if overall_score >= 4.5: overall_comment = '你是AI组织转型的专家级人才！'
+    elif overall_score >= 3.5: overall_comment = '你具备较强的AI组织转型能力，是组织中的AI先行者'
+    elif overall_score >= 2.5: overall_comment = '你处于AI能力的中等水平，有较大提升空间'
+    else: overall_comment = '你的AI能力还需要大量学习和实践，但这是成长的起点'
+    
+    radar_data = [{'dimension': r['name'], 'value': r['rate'] * 100, 'color': r['color']} for r in results_data]
+    sorted_results = sorted(results_data, key=lambda x: x['rate'])
+    weakest = sorted_results[:2]
+    strongest = sorted_results[-2:][::-1]
+    
+    return render_template('result.html',
+                         name=row[3], department=row[4], position=row[5],
+                         results=results_data, overall_score=overall_score,
+                         overall_comment=overall_comment, radar_data=radar_data,
+                         weakest=weakest, strongest=strongest,
+                         current_time=row[8][:16])
+
+@app.route('/report/<assessment_id>')
+def download_report(assessment_id):
+    if not session.get('user_id'):
+        return redirect(url_for('login_page'))
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    c.execute('SELECT * FROM assessments WHERE id = ? AND user_id = ?', 
+              (assessment_id, session['user_id']))
+    row = c.fetchone()
+    conn.close()
+    
+    if not row:
+        return redirect(url_for('dashboard'))
+    
+    import ast
+    results_data = ast.literal_eval(row[6]) if row[6] else []
+    overall_score = row[7]
+    
+    if overall_score >= 4.5: overall_comment = '你是AI组织转型的专家级人才！'
+    elif overall_score >= 3.5: overall_comment = '你具备较强的AI组织转型能力，是组织中的AI先行者'
+    elif overall_score >= 2.5: overall_comment = '你处于AI能力的中等水平，有较大提升空间'
+    else: overall_comment = '你的AI能力还需要大量学习和实践，但这是成长的起点'
+    
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=20, textColor=colors.HexColor('#1F4E79'), alignment=1, spaceAfter=10)
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=1, spaceAfter=20)
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#1F4E79'), spaceAfter=8)
+    normal_style = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=9, spaceAfter=6)
+    
+    story = []
+    story.append(Paragraph('AI组织转型人才能力评估报告', title_style))
+    story.append(Paragraph(f"被评估人：{row[3] or '匿名'} | 部门：{row[4] or '-'} | 岗位：{row[5] or '-'}", subtitle_style))
+    story.append(Paragraph(f"<b>综合得分：{overall_score:.1f} / 5.0</b> - {overall_comment}", normal_style))
+    story.append(Spacer(1, 10*mm))
+    
+    story.append(Paragraph('各维度能力评估', heading_style))
+    dim_data = [['维度', '得分率', '等级', '发展建议']] + \
+               [[r['name'], f"{r['rate']*100:.0f}%", f"L{r['level']} {r['level_name']}", r['suggestion'][:40]+'...'] 
+               for r in results_data]
+    dim_table = Table(dim_data, colWidths=[35*mm, 20*mm, 25*mm, 100*mm])
+    dim_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E75B6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F9FC')]),
+    ]))
+    story.append(dim_table)
+    story.append(Spacer(1, 8*mm))
+    
+    story.append(Paragraph('个性化发展建议', heading_style))
+    for r in results_data:
+        story.append(Paragraph(f"<b>{r['name']}</b>：{r['suggestion']}", normal_style))
+    
+    story.append(Spacer(1, 10*mm))
+    story.append(Paragraph(f"评估时间：{row[8][:10]} | 基于AI组织转型实战框架 | 小龙虾公司出品", 
+                         ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.gray, alignment=1)))
+    
+    doc.build(story)
+    buffer.seek(0)
+    filename = f"AI能力评估报告_{row[3] or '匿名'}_{row[8][:10]}.pdf"
+    return send_file(buffer, as_attachment=True, download_name=filename, mimetype='application/pdf')
+
+# ============ 启动 ============
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5011))
+    app.run(host='0.0.0.0', port=port, debug=False)

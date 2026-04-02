@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测评 - AI组织转型人才能力测评</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-3xl mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6">
+            <div class="text-gray-600">
+                第 <span class="font-bold text-gray-800">{{ q_num }}</span> / {{ total }} 题
+            </div>
+            <a href="/dashboard" class="text-gray-500 hover:text-gray-700">退出</a>
+        </div>
+
+        <!-- Progress -->
+        <div class="mb-4">
+            <div class="flex justify-between text-xs text-gray-500 mb-2">
+                <span>总体进度</span>
+                <span>{{ '%.0f'|format((q_num / total) * 100) }}%</span>
+            </div>
+            <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div class="h-full bg-blue-500 transition-all duration-500" style="width: {{ (q_num / total) * 100 }}%"></div>
+            </div>
+        </div>
+
+        <!-- Dimension Tags -->
+        <div class="flex flex-wrap gap-2 mb-6">
+            {% set dim_colors = {'STR': 'bg-blue-100 text-blue-700', 'ORG': 'bg-green-100 text-green-700', 'DAT': 'bg-yellow-100 text-yellow-700', 'TEC': 'bg-orange-100 text-orange-700', 'CUL': 'bg-red-100 text-red-700'} %}
+            {% for code, name in {'STR': '战略', 'ORG': '组织', 'DAT': '数据', 'TEC': '技术', 'CUL': '文化'}.items() %}
+            <span class="px-3 py-1 rounded-full text-xs font-medium {{ dim_colors[code] }}">{{ code }} {{ name }}</span>
+            {% endfor %}
+        </div>
+
+        <!-- Question Card -->
+        <div class="bg-white rounded-2xl shadow-lg p-8 mb-6">
+            <div class="mb-6">
+                <span class="inline-block px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                    {{ question.code }}
+                </span>
+            </div>
+            
+            <h2 class="text-xl font-medium text-gray-800 mb-8 leading-relaxed">
+                {{ question.question }}
+            </h2>
+            
+            <form id="answerForm">
+                <input type="hidden" name="question_id" value="{{ question.id }}">
+                
+                <div class="grid grid-cols-5 gap-3" id="scoreOptions">
+                    {% for score in range(1, 6) %}
+                    <label class="score-option flex flex-col items-center p-4 border-2 border-gray-200 rounded-xl hover:border-blue-400 cursor-pointer transition-all">
+                        <input type="radio" name="score" value="{{ score }}" class="sr-only">
+                        <span class="text-2xl font-bold text-gray-700 mb-1">{{ score }}</span>
+                        <span class="text-xs text-gray-500">
+                            {% if score == 1 %}完全不符{% elif score == 2 %}不太符合{% elif score == 3 %}一般{% elif score == 4 %}比较符合{% else %}完全符合{% endif %}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+                
+                <div class="flex justify-between items-center pt-6">
+                    {% if q_num > 1 %}
+                    <a href="/assessment/q/{{ q_num - 1 }}" class="px-6 py-3 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+                        ← 上一题
+                    </a>
+                    {% else %}
+                    <div></div>
+                    {% endif %}
+                    
+                    <button type="submit" id="nextBtn"
+                            class="px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                        {% if q_num < total %}下一题 →{% else %}查看结果 →{% endif %}
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Keyboard Hint -->
+        <div class="text-center text-gray-400 text-sm">
+            <p>键盘 1-5 快速打分 | Enter 键进入下一题</p>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('answerForm');
+    const options = document.querySelectorAll('.score-option');
+    const radioInputs = document.querySelectorAll('input[name="score"]');
+    
+    options.forEach((option, index) => {
+        option.addEventListener('click', function() {
+            options.forEach(o => {
+                o.classList.remove('selected', 'border-blue-500', 'bg-blue-50');
+                o.querySelector('input').checked = false;
+            });
+            this.classList.add('selected', 'border-blue-500', 'bg-blue-50');
+            radioInputs[index].checked = true;
+        });
+    });
+    
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const selectedInput = document.querySelector('input[name="score"]:checked');
+        if (!selectedInput) {
+            alert('请选择评分');
+            return;
+        }
+        
+        const data = {
+            question_id: {{ question.id }},
+            score: parseInt(selectedInput.value)
+        };
+        
+        try {
+            const response = await fetch('/api/save_answer', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'complete') {
+                window.location.href = result.redirect;
+            } else if (result.status === 'success') {
+                window.location.href = '/assessment/q/' + result.next;
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('提交失败，请重试');
+        }
+    });
+    
+    document.addEventListener('keydown', function(e) {
+        if (e.key >= '1' && e.key <= '5') {
+            const index = parseInt(e.key) - 1;
+            options[index].click();
+        } else if (e.key === 'Enter') {
+            const selectedInput = document.querySelector('input[name="score"]:checked');
+            if (selectedInput) {
+                document.getElementById('nextBtn').click();
+            }
+        }
+    });
+});
+</script>
+</body>
+</html>
