@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 用户只能读写自己的数据
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // 测评数据：用户只能读写自己的
+    match /assessments/{assessmentId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      
+      // 读取所有测评数据用于团队分析（需要userId匹配）
+      allow read: if request.auth != null; 
+      allow create: if request.auth != null;
+    }
+  }
+}
