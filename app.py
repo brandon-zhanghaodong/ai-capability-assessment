@@ -621,15 +621,29 @@ def download_report(assessment_id):
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    
+    # 注册中文字体
+    try:
+        pdfmetrics.registerFont(TTFont('Heiti', '/System/Library/Fonts/STHeiti Light.ttc'))
+        PDF_FONT = 'Heiti'
+    except:
+        try:
+            pdfmetrics.registerFont(TTFont('Arial', '/Library/Fonts/Arial Unicode.ttf'))
+            PDF_FONT = 'Arial'
+        except:
+            PDF_FONT = 'Helvetica'
     
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
     
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=20, textColor=colors.HexColor('#1F4E79'), alignment=1, spaceAfter=10)
-    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=1, spaceAfter=20)
-    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#1F4E79'), spaceAfter=8)
-    normal_style = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=9, spaceAfter=6)
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=20, textColor=colors.HexColor('#1F4E79'), alignment=1, spaceAfter=10, fontName=PDF_FONT)
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=1, spaceAfter=20, fontName=PDF_FONT)
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#1F4E79'), spaceAfter=8, fontName=PDF_FONT)
+    normal_style = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=9, spaceAfter=6, fontName=PDF_FONT)
+    footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.gray, alignment=1, fontName=PDF_FONT)
     
     story = []
     story.append(Paragraph('AI组织转型人才能力评估报告', title_style))
@@ -661,7 +675,7 @@ def download_report(assessment_id):
     
     story.append(Spacer(1, 10*mm))
     story.append(Paragraph(f"评估时间：{row[8][:10]} | 基于AI组织转型实战框架 | 小龙虾公司出品", 
-                         ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.gray, alignment=1)))
+                         footer_style))
     
     doc.build(story)
     buffer.seek(0)
@@ -760,15 +774,29 @@ def generate_pdf_bytes(row, results_data, overall_score, overall_comment):
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    
+    # 注册中文字体
+    try:
+        pdfmetrics.registerFont(TTFont('Heiti', '/System/Library/Fonts/STHeiti Light.ttc'))
+        PDF_FONT = 'Heiti'
+    except:
+        try:
+            pdfmetrics.registerFont(TTFont('Arial', '/Library/Fonts/Arial Unicode.ttf'))
+            PDF_FONT = 'Arial'
+        except:
+            PDF_FONT = 'Helvetica'
     
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
     
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=20, textColor=colors.HexColor('#1F4E79'), alignment=1, spaceAfter=10)
-    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=1, spaceAfter=20)
-    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#1F4E79'), spaceAfter=8)
-    normal_style = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=9, spaceAfter=6)
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=20, textColor=colors.HexColor('#1F4E79'), alignment=1, spaceAfter=10, fontName=PDF_FONT)
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=1, spaceAfter=20, fontName=PDF_FONT)
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#1F4E79'), spaceAfter=8, fontName=PDF_FONT)
+    normal_style = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=9, spaceAfter=6, fontName=PDF_FONT)
+    footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.gray, alignment=1, fontName=PDF_FONT)
     
     story = []
     story.append(Paragraph('AI组织转型人才能力评估报告', title_style))
@@ -800,7 +828,7 @@ def generate_pdf_bytes(row, results_data, overall_score, overall_comment):
     
     story.append(Spacer(1, 10*mm))
     story.append(Paragraph(f"评估时间：{row[8][:10]} | 基于AI组织转型实战框架 | 小龙虾公司出品", 
-                         ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.gray, alignment=1)))
+                         footer_style))
     
     doc.build(story)
     buffer.seek(0)
@@ -874,6 +902,167 @@ def tenant_admin_export_all():
                     download_name=filename, 
                     mimetype='application/zip')
 
+@app.route('/tenant-admin/company-report')
+def tenant_admin_company_report():
+    """生成企业整体测评报告（所有维度汇总）"""
+    if not session.get('user_id'):
+        return redirect(url_for('login_page'))
+    
+    if not session.get('is_tenant_admin') and not session.get('is_admin'):
+        return redirect(url_for('dashboard'))
+    
+    company = session.get('company', '')
+    if not company:
+        return "您没有关联企业", 400
+    
+    import ast
+    from collections import defaultdict
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    c.execute('''
+        SELECT a.id, a.name, a.department, a.position, a.overall_score, a.created_at,
+               a.results, a.answers, a.user_id
+        FROM assessments a
+        JOIN users u ON a.user_id = u.id
+        WHERE u.company = ?
+        ORDER BY a.created_at DESC
+    ''', (company,))
+    
+    all_assessments = c.fetchall()
+    conn.close()
+    
+    if not all_assessments:
+        return "该公司暂无测评记录", 400
+    
+    # 汇总各维度数据
+    dim_stats = defaultdict(list)
+    total_scores = []
+    total_count = len(all_assessments)
+    
+    for row in all_assessments:
+        results_data = ast.literal_eval(row[6]) if row[6] else []
+        overall_score = row[4] or 0
+        total_scores.append(overall_score)
+        
+        for r in results_data:
+            dim_stats[r['name']].append({
+                'rate': r['rate'],
+                'level': r['level'],
+                'level_name': r['level_name'],
+                'suggestion': r['suggestion']
+            })
+    
+    # 计算各维度平均分
+    dim_averages = []
+    for dim_name, records in dim_stats.items():
+        avg_rate = sum(r['rate'] for r in records) / len(records)
+        avg_level = sum(r['level'] for r in records) / len(records)
+        dim_averages.append({
+            'name': dim_name,
+            'avg_rate': avg_rate,
+            'avg_level': avg_level,
+            'count': len(records),
+            'suggestion': records[0]['suggestion'] if records else ''
+        })
+    
+    # 排序：按平均分降序
+    dim_averages.sort(key=lambda x: x['avg_rate'], reverse=True)
+    
+    company_avg = sum(total_scores) / len(total_scores) if total_scores else 0
+    
+    # 生成PDF
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    
+    try:
+        pdfmetrics.registerFont(TTFont('Heiti', '/System/Library/Fonts/STHeiti Light.ttc'))
+        PDF_FONT = 'Heiti'
+    except:
+        try:
+            pdfmetrics.registerFont(TTFont('Arial', '/Library/Fonts/Arial Unicode.ttf'))
+            PDF_FONT = 'Arial'
+        except:
+            PDF_FONT = 'Helvetica'
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#1F4E79'), alignment=1, spaceAfter=8, fontName=PDF_FONT)
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=1, spaceAfter=15, fontName=PDF_FONT)
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#1F4E79'), spaceAfter=8, fontName=PDF_FONT)
+    normal_style = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=9, spaceAfter=6, fontName=PDF_FONT)
+    footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.gray, alignment=1, fontName=PDF_FONT)
+    
+    story = []
+    story.append(Paragraph(f'{company} - AI组织转型能力整体评估报告', title_style))
+    story.append(Paragraph(f'评估人数：{total_count}人 | 企业平均分：{company_avg:.2f}/5.0 | 生成时间：{datetime.now().strftime("%Y-%m-%d %H:%M")}', subtitle_style))
+    
+    # 整体统计
+    story.append(Paragraph('整体概况', heading_style))
+    stats_data = [
+        ['指标', '数值'],
+        ['总评估人数', str(total_count)],
+        ['企业平均得分', f'{company_avg:.2f}/5.0'],
+        ['最高分', f'{max(total_scores):.1f}/5.0' if total_scores else '-'],
+        ['最低分', f'{min(total_scores):.1f}/5.0' if total_scores else '-'],
+        ['评估维度数', str(len(dim_averages))],
+    ]
+    stats_table = Table(stats_data, colWidths=[50*mm, 50*mm])
+    stats_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E75B6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F9FC')]),
+    ]))
+    story.append(stats_table)
+    story.append(Spacer(1, 10*mm))
+    
+    # 各维度分析
+    story.append(Paragraph('各维度能力分析', heading_style))
+    dim_data = [['维度', '平均得分率', '平均等级', '建议']] + [
+        [d['name'], f"{d['avg_rate']*100:.0f}%", f"L{int(d['avg_level'])}", d['suggestion'][:30]+'...']
+        for d in dim_averages
+    ]
+    dim_table = Table(dim_data, colWidths=[30*mm, 25*mm, 20*mm, 95*mm])
+    dim_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E75B6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F9FC')]),
+    ]))
+    story.append(dim_table)
+    story.append(Spacer(1, 10*mm))
+    
+    # 发展建议
+    story.append(Paragraph('整体发展建议', heading_style))
+    for d in dim_averages[:5]:  # Top 5 weakest areas
+        story.append(Paragraph(f"<b>{d['name']}</b>（{d['avg_rate']*100:.0f}%）：{d['suggestion']}", normal_style))
+    
+    story.append(Spacer(1, 10*mm))
+    story.append(Paragraph(f'本报告基于 {total_count} 份评估数据汇总生成 | AI组织转型实战框架 | 小龙虾公司出品', footer_style))
+    
+    doc.build(story)
+    buffer.seek(0)
+    
+    company_safe = company.replace(' ', '_').replace('/', '_')
+    filename = f"{company_safe}_整体评估报告_{datetime.now().strftime('%Y%m%d')}.pdf"
+    return send_file(buffer, as_attachment=True, download_name=filename, mimetype='application/pdf')
+
 @app.route('/tenant-admin/user/<assessment_id>')
 def tenant_admin_view_user_report(assessment_id):
     """租户管理员查看某个用户的报告"""
@@ -945,7 +1134,7 @@ def manage_users():
     conn = get_db_conn()
     c = conn.cursor()
     
-    if is_admin and not is_tenant_admin:
+    if is_admin:
         # 平台管理员：查看所有用户
         c.execute('SELECT id, username, company, is_admin, is_tenant_admin, created_at FROM users ORDER BY company, created_at DESC')
     else:
@@ -1068,10 +1257,18 @@ def api_create_user():
     if not is_tenant_admin and not is_admin:
         return jsonify({'status': 'error', 'message': '权限不足'})
     
-    data = request.json
-    username = data.get('username', '').strip()
-    password = data.get('password', '')
-    company = data.get('company', '').strip() or session.get('company', '')
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({'status': 'error', 'message': '无效的请求数据'})
+    except Exception:
+        return jsonify({'status': 'error', 'message': '无效的请求数据'})
+    
+    username = data.get('username', '').strip() if data else ''
+    password = data.get('password', '') if data else ''
+    # 如果提供了company就用提供的，否则用session中的company
+    _company_from_data = data.get('company', '') if data else ''
+    company = _company_from_data.strip() if _company_from_data.strip() else session.get('company', '')
     
     if not username or not password:
         return jsonify({'status': 'error', 'message': '用户名和密码不能为空'})
@@ -1082,14 +1279,13 @@ def api_create_user():
     # 租户管理员只能创建同企业用户
     if is_tenant_admin and not is_admin:
         user_company = session.get('company', '')
-        if company != user_company:
+        # 如果没提供公司名，自动使用租户管理员的公司
+        if not company:
+            company = user_company
+        elif company != user_company:
             return jsonify({'status': 'error', 'message': '租户管理员只能创建同企业用户'})
     
     user_id = str(uuid.uuid4())[:8]
-    
-    # 如果没有提供企业名称，且是平台管理员创建的，则报错
-    if is_tenant_admin and not is_admin and not company:
-        return jsonify({'status': 'error', 'message': '企业名称不能为空'})
     
     try:
         conn = get_db_conn()
@@ -1107,3 +1303,135 @@ def api_create_user():
         })
     except sqlite3.IntegrityError:
         return jsonify({'status': 'error', 'message': '用户名已存在'})
+
+@app.route('/api/edit-user', methods=['POST'])
+def api_edit_user():
+    """编辑用户信息"""
+    if not session.get('user_id'):
+        return jsonify({'status': 'error', 'message': '请先登录'})
+    
+    is_tenant_admin = session.get('is_tenant_admin')
+    is_admin = session.get('is_admin')
+    
+    if not is_tenant_admin and not is_admin:
+        return jsonify({'status': 'error', 'message': '权限不足'})
+    
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({'status': 'error', 'message': '无效的请求数据'})
+    except Exception:
+        return jsonify({'status': 'error', 'message': '无效的请求数据'})
+    
+    user_id = data.get('user_id', '')
+    new_username = data.get('username', '').strip()
+    new_password = data.get('password', '')
+    new_is_tenant_admin = data.get('is_tenant_admin', 0)
+    
+    if not user_id:
+        return jsonify({'status': 'error', 'message': '用户ID不能为空'})
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    
+    # 检查目标用户存在
+    c.execute('SELECT id, company, is_admin, is_tenant_admin FROM users WHERE id = ?', (user_id,))
+    target = c.fetchone()
+    if not target:
+        conn.close()
+        return jsonify({'status': 'error', 'message': '用户不存在'})
+    
+    target_company = target[1]
+    target_is_admin = target[2]
+    
+    # 权限检查
+    if is_tenant_admin and not is_admin:
+        my_company = session.get('company', '')
+        if target_company != my_company:
+            conn.close()
+            return jsonify({'status': 'error', 'message': '只能编辑本企业用户'})
+        if target_is_admin:
+            conn.close()
+            return jsonify({'status': 'error', 'message': '租户管理员不能编辑其他管理员'})
+    
+    # 不能编辑自己
+    if user_id == session.get('user_id'):
+        conn.close()
+        return jsonify({'status': 'error', 'message': '不能编辑自己的账号'})
+    
+    # 构建更新
+    if new_password:
+        if len(new_password) < 6:
+            conn.close()
+            return jsonify({'status': 'error', 'message': '密码至少6位'})
+        c.execute('UPDATE users SET username = ?, password = ? WHERE id = ?',
+                 (new_username, hash_password(new_password), user_id))
+    else:
+        c.execute('UPDATE users SET username = ? WHERE id = ?',
+                 (new_username, user_id))
+    
+    try:
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success', 'message': f'用户 {new_username} 更新成功'})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({'status': 'error', 'message': '用户名已存在'})
+
+@app.route('/api/delete-user', methods=['POST'])
+def api_delete_user():
+    """删除用户"""
+    if not session.get('user_id'):
+        return jsonify({'status': 'error', 'message': '请先登录'})
+    
+    is_tenant_admin = session.get('is_tenant_admin')
+    is_admin = session.get('is_admin')
+    
+    if not is_tenant_admin and not is_admin:
+        return jsonify({'status': 'error', 'message': '权限不足'})
+    
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({'status': 'error', 'message': '无效的请求数据'})
+    except Exception:
+        return jsonify({'status': 'error', 'message': '无效的请求数据'})
+    
+    user_id = data.get('user_id', '')
+    
+    if not user_id:
+        return jsonify({'status': 'error', 'message': '用户ID不能为空'})
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    
+    c.execute('SELECT id, company, is_admin, is_tenant_admin FROM users WHERE id = ?', (user_id,))
+    target = c.fetchone()
+    if not target:
+        conn.close()
+        return jsonify({'status': 'error', 'message': '用户不存在'})
+    
+    target_company = target[1]
+    target_is_admin = target[2]
+    
+    if is_tenant_admin and not is_admin:
+        my_company = session.get('company', '')
+        if target_company != my_company:
+            conn.close()
+            return jsonify({'status': 'error', 'message': '只能删除本企业用户'})
+        if target_is_admin:
+            conn.close()
+            return jsonify({'status': 'error', 'message': '租户管理员不能删除其他管理员'})
+    
+    if user_id == session.get('user_id'):
+        conn.close()
+        return jsonify({'status': 'error', 'message': '不能删除自己的账号'})
+    
+    try:
+        c.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success', 'message': '用户删除成功'})
+    except Exception as e:
+        conn.close()
+        return jsonify({'status': 'error', 'message': f'删除失败: {str(e)}'})

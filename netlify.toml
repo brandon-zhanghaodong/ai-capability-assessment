@@ -1,0 +1,20 @@
+[build]
+  command = "pip install -r requirements.txt -t /tmp/pip_deps && cp -r /tmp/pip_deps/* ."
+  publish = "public"
+  functions = "netlify/functions"
+
+[build.environment]
+  PIP_CACHE_DIR = "/tmp/pip_cache"
+  INSTALL_PURE_PYTHON = "true"
+
+[[plugins]]
+  package = "@netlify/plugin-python-wsgi"
+  [plugins.inputs]
+    wsgiModule = "app:app"
+
+[functions]
+  node_bundler = "none"
+  python_bundler = "pip"
+
+[functions."*"]
+  included_files = ["app.py", "templates/**", "static/**"]
