@@ -21,6 +21,9 @@ app.secret_key = os.environ.get('SECRET_KEY', 'ai-capability-v3-' + str(uuid.uui
 
 DATABASE = '/tmp/ai_assessment_v3.db'
 
+# 超级管理员初始化密钥（首次设置后请修改或删除此行）
+SUPER_ADMIN_SECRET = '小龙虾-admin-2026'
+
 def init_db():
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
@@ -67,6 +70,50 @@ def verify_password(pwd, hashed):
 
 def get_db_conn():
     return sqlite3.connect(DATABASE)
+
+# ============ 超级管理员初始化 ============
+
+@app.route('/api/setup-super-admin', methods=['POST'])
+def setup_super_admin():
+    """初始化超级管理员账号（首次设置用，之后删除）"""
+    data = request.json
+    secret = data.get('secret', '')
+    
+    if secret != SUPER_ADMIN_SECRET:
+        return jsonify({'status': 'error', 'message': '密钥错误'})
+    
+    username = data.get('username', 'admin')
+    password = data.get('password', 'admin123')
+    company = data.get('company', '系统')
+    
+    user_id = str(uuid.uuid4())[:8]
+    
+    try:
+        conn = get_db_conn()
+        c = conn.cursor()
+        
+        # 检查是否已存在
+        c.execute('SELECT id FROM users WHERE username = ?', (username,))
+        existing = c.fetchone()
+        
+        if existing:
+            # 更新为超级管理员
+            c.execute('''UPDATE users SET is_admin = 1, is_tenant_admin = 1, company = ? 
+                        WHERE username = ?''', (company, username))
+            msg = f"用户 {username} 已升级为超级管理员"
+        else:
+            # 创建新用户
+            c.execute('''INSERT INTO users (id, username, password, company, is_admin, is_tenant_admin) 
+                        VALUES (?, ?, ?, ?, 1, 1)''',
+                     (user_id, username, hash_password(password), company))
+            msg = f"超级管理员 {username} 创建成功，密码：{password}"
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'status': 'success', 'message': msg})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
 
 # ============ 数据 ============
 CAPABILITY_DIMENSIONS = {
