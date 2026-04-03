@@ -191,14 +191,41 @@ def login_page():
 def register_page():
     if session.get('user_id'):
         return redirect(url_for('dashboard'))
-    return render_template('register.html')
+    # 普通用户不能自己注册，显示提示页面
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>注册已禁用 - AI能力测评系统</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gray-50 min-h-screen flex items-center justify-center">
+        <div class="bg-white p-8 rounded-xl shadow-lg max-w-md text-center">
+            <div class="text-4xl mb-4">🔒</div>
+            <h1 class="text-xl font-bold text-gray-800 mb-4">注册功能已禁用</h1>
+            <p class="text-gray-600 mb-6">普通用户不能自行注册，请联系管理员分配账号后再登录。</p>
+            <a href="/login" class="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">返回登录</a>
+        </div>
+    </body>
+    </html>
+    '''
 
 @app.route('/api/register', methods=['POST'])
 def register():
+    """只有管理员才能创建账号，普通用户不能自己注册"""
+    
+    # 检查是否是以管理员身份登录
+    is_admin = session.get('is_admin', 0)
+    is_tenant_admin = session.get('is_tenant_admin', 0)
+    
+    if not is_admin and not is_tenant_admin:
+        return jsonify({'status': 'error', 'message': '普通用户不能注册账号，请使用管理员分配的账号登录'})
+    
     data = request.json
     username = data.get('username', '').strip()
     password = data.get('password', '')
-    company = data.get('company', '').strip()
+    company = data.get('company', '').strip() or session.get('company', '')
     
     if not username or not password:
         return jsonify({'status': 'error', 'message': '用户名和密码不能为空'})
@@ -209,18 +236,17 @@ def register():
     try:
         conn = get_db_conn()
         c = conn.cursor()
-        c.execute('INSERT INTO users (id, username, password, company) VALUES (?, ?, ?, ?)',
+        c.execute('INSERT INTO users (id, username, password, company, is_admin, is_tenant_admin) VALUES (?, ?, ?, ?, 0, 0)',
                  (user_id, username, hash_password(password), company))
         conn.commit()
         conn.close()
         
-        session['user_id'] = user_id
-        session['username'] = username
-        session['company'] = company
-        session['is_admin'] = 0
-        session['is_tenant_admin'] = 0
-        
-        return jsonify({'status': 'success', 'redirect': '/dashboard'})
+        return jsonify({
+            'status': 'success', 
+            'message': f'用户 {username} 创建成功，密码：{password}（请告知该用户）',
+            'username': username,
+            'password': password
+        })
     except sqlite3.IntegrityError:
         return jsonify({'status': 'error', 'message': '用户名已存在'})
 
