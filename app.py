@@ -17,7 +17,8 @@ from datetime import datetime
 from io import BytesIO
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'ai-capability-v3-' + str(uuid.uuid4()))
+# 使用固定secret key确保session跨worker有效
+app.secret_key = os.environ.get('SECRET_KEY', 'ai-capability-v3-fixed-key-2026')
 
 DATABASE = '/tmp/ai_assessment_v3.db'
 
@@ -217,6 +218,7 @@ def register():
         session['username'] = username
         session['company'] = company
         session['is_admin'] = 0
+        session['is_tenant_admin'] = 0
         
         return jsonify({'status': 'success', 'redirect': '/dashboard'})
     except sqlite3.IntegrityError:
@@ -271,7 +273,8 @@ def dashboard():
                          username=session.get('username', ''),
                          company=session.get('company', ''),
                          history=history_list,
-                         is_admin=session.get('is_admin', 0))
+                         is_admin=session.get('is_admin', 0),
+                         is_tenant_admin=session.get('is_tenant_admin', 0))
 
 @app.route('/team')
 def team_analytics():
