@@ -693,7 +693,7 @@ def tenant_admin_dashboard():
     # 获取本企业所有测评记录
     c.execute('''
         SELECT a.id, a.name, a.department, a.position, a.overall_score, a.created_at,
-               u.username, u.email
+               u.username
         FROM assessments a
         JOIN users u ON a.user_id = u.id
         WHERE u.company = ?
