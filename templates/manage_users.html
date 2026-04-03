@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户管理 - AI组织转型人才能力评估系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .gradient-header {
+            background: linear-gradient(135deg, #1F4E79 0%, #2E75B6 100%);
+        }
+        .toggle-btn {
+            transition: all 0.2s;
+        }
+        .toggle-btn:hover {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- 导航栏 -->
+    <nav class="gradient-header text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-xl font-bold">👥 用户管理</h1>
+                    <p class="text-sm text-blue-100">
+                        {% if is_platform_admin %}平台管理员模式{% else %}租户管理员模式{% endif %}
+                    </p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <a href="/tenant-admin" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm transition">
+                        返回管理后台
+                    </a>
+                    <a href="/dashboard" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm transition">
+                        个人中心
+                    </a>
+                    <a href="/logout" class="bg-red-500/80 hover:bg-red-500 px-4 py-2 rounded-lg text-sm transition">
+                        退出
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <!-- 创建用户卡片 -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">➕ 快速创建用户</h2>
+            <form id="createUserForm" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+                    <input type="text" name="username" required 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="输入用户名">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+                    <input type="password" name="password" required minlength="6"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="至少6位">
+                </div>
+                {% if is_platform_admin %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">所属企业</label>
+                    <input type="text" name="company" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="所属企业（可选）">
+                </div>
+                {% endif %}
+                <div class="flex items-end">
+                    <button type="submit" 
+                            class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition">
+                        创建用户
+                    </button>
+                </div>
+            </form>
+            <div id="createResult" class="mt-4 hidden"></div>
+        </div>
+
+        <!-- 用户列表 -->
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div class="p-6 border-b">
+                <h2 class="text-lg font-semibold text-gray-800">📋 用户列表</h2>
+                <p class="text-sm text-gray-500 mt-1">共 {{ users|length }} 个用户</p>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户名</th>
+                            {% if is_platform_admin %}
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">企业</th>
+                            {% endif %}
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">注册时间</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">租户管理员</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">平台管理员</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        {% for u in users %}
+                        <tr class="hover:bg-gray-50" id="user-{{ u.id }}">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="font-medium text-gray-900">{{ u.username }}</div>
+                                {% if u.id == session.user_id %}
+                                <span class="text-xs text-blue-600">(当前账号)</span>
+                                {% endif %}
+                            </td>
+                            {% if is_platform_admin %}
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                {{ u.company or '-' }}
+                            </td>
+                            {% endif %}
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                {{ u.created_at }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                {% if u.id == session.user_id %}
+                                <span class="text-gray-400 text-sm">-</span>
+                                {% else %}
+                                <button onclick="toggleTenantAdmin('{{ u.id }}', '{{ u.username }}', {{ u.is_tenant_admin }})"
+                                        class="toggle-btn px-3 py-1 rounded-full text-sm font-medium {{ 'bg-green-100 text-green-800' if u.is_tenant_admin else 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
+                                    {{ '✅ 是' if u.is_tenant_admin else '○ 否' }}
+                                </button>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                {% if u.id == session.user_id %}
+                                <span class="text-gray-400 text-sm">-</span>
+                                {% else %}
+                                <span class="px-3 py-1 rounded-full text-sm font-medium {{ 'bg-purple-100 text-purple-800' if u.is_admin else 'bg-gray-100 text-gray-400' }}">
+                                    {{ '👑 是' if u.is_admin else '✗ 否' }}
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="px-6 py-12 text-center text-gray-500">
+                                暂无用户
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 权限说明 -->
+        <div class="mt-8 bg-blue-50 rounded-xl p-6">
+            <h3 class="font-semibold text-blue-800 mb-3">📖 权限说明</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-700">
+                <div>
+                    <h4 class="font-medium mb-1">👑 平台管理员</h4>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li>管理所有企业和所有用户</li>
+                        <li>可以设置/取消租户管理员</li>
+                        <li>可以创建任何企业的用户</li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-medium mb-1">🏢 租户管理员</h4>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li>管理所在企业的所有用户</li>
+                        <li>查看本企业所有测评报告</li>
+                        <li>批量导出企业报告</li>
+                        <li>可以创建同企业用户</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 创建用户
+        document.getElementById('createUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                username: formData.get('username'),
+                password: formData.get('password'),
+                company: formData.get('company') || ''
+            };
+            
+            try {
+                const res = await fetch('/api/create-user', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                
+                const resultDiv = document.getElementById('createResult');
+                resultDiv.classList.remove('hidden');
+                
+                if (result.status === 'success') {
+                    resultDiv.innerHTML = `<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+                        ${result.message}
+                        <br><strong>请告知用户：</strong>用户名 ${result.username}，密码 ${result.password}
+                    </div>`;
+                    e.target.reset();
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    resultDiv.innerHTML = `<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                        ${result.message}
+                    </div>`;
+                }
+            } catch (err) {
+                alert('创建失败: ' + err.message);
+            }
+        });
+        
+        // 切换租户管理员
+        async function toggleTenantAdmin(userId, username, currentStatus) {
+            if (!confirm(`确定要${currentStatus ? '取消' : '设置'} ${username} 为租户管理员吗？`)) {
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/toggle-tenant-admin', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({user_id: userId})
+                });
+                const result = await res.json();
+                
+                if (result.status === 'success') {
+                    location.reload();
+                } else {
+                    alert(result.message);
+                }
+            } catch (err) {
+                alert('操作失败: ' + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
